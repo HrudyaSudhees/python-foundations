@@ -1,0 +1,74 @@
+{
+    "people": [
+        "Hru",
+        "Abhi",
+        "Amma",
+        "Kavi",
+        "l",
+        "1"
+    ],
+    "expenses": [
+        {
+            "expense_name": "Dinner",
+            "amount": 1000.0,
+            "paid_by": "Hru",
+            "selected_people": [
+                "Hru",
+                "Abhi"
+            ],
+            "share": 500.0
+        },
+        {
+            "expense_name": "Groceries",
+            "amount": 2000.0,
+            "paid_by": "Kavi",
+            "selected_people": [
+                "Hru",
+                "Kavi"
+            ],
+            "share": 1000.0
+        },
+        {
+            "expense_name": "Lunch",
+            "amount": 2590,
+            "paid_by": "Hru",
+            "selected_people": [
+                "Hru",
+                "Abhi",
+                "Kavi"
+            ],
+            "share": 863.3333333333334
+        },
+        {
+            "expense_name": "brkfast",
+            "amount": 2513,
+            "paid_by": "Hru",
+            "selected_people": [
+                "Hru",
+                "Abhi"
+            ],
+            "share": 1256.5
+        },
+        {
+            "expense_name": "party",
+            "amount": 5900,
+            "paid_by": "Kavi",
+            "selected_people": [
+                "Hru",
+                "Abhi"
+            ],
+            "share": 2950.0
+        },
+        {
+            "expense_name": "lunch again",
+            "amount": 1200,
+            "paid_by": "Abhi",
+            "selected_people": [
+                "Hru",
+                "Abhi",
+                "Amma"
+            ],
+            "share": 400.0
+        }
+    ]
+}
