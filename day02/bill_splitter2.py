@@ -1,65 +1,27 @@
-
 import sqlite3
 from pathlib import Path
 
-
-people = []
-expenses = []
-#define connections
 DB_FILE = Path(__file__).with_name("bill_splitter.db")
+SQL_FILE = Path(__file__).with_name("bill_splitter_setup.sql")
+
 def get_connection():
     conn = sqlite3.connect(DB_FILE)
-    conn.execute(
-    
-conn = sqlite3.connect("bill_splitter.db")
-with open("bill_splitter_setup.sql", "r") as file:
-    sql_script = file.read()
-conn.executescript(sql_script)
-conn.close()
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
-def add_people():
-    global people
-    name = input ("Enter name: ").strip()
+def initialize_database():
+    conn = get_connection()
 
-    conn = sqlite3.connect("bill_splitter.db")
-    cursor = conn.cursor()
-
-    cursor.execute(
-    'INSERT INTO people (name) VALUES (?)',
-        (name,)
-    )
-    conn.commit()
-    conn.close()
-
-    print("Person added successfully")
-
-add_people()
-
-
-
-'''
-def load_data():
-    global people, expenses
     try:
-        with open(DATA_FILE,"r", encoding = "utf-8") as file:
-            data = json.load(file)
-        people = data.get("people",[])
-        expenses = data.get("expenses",[])
-        print("Saved data loaded successfully.")
-    except FileNotFoundError:
-        people = []
-        expenses= []
-        print("Starting with empty data.")
+        with open(SQL_FILE, "r", encoding="utf-8") as file:
+            sql_script = file.read()
 
-def save_data():
-    data = {
-        "people": people,
-        "expenses": expenses
-        }
+        conn.executescript(sql_script)
+        print("Database initialized successfully.")
 
-    with open(DATA_FILE, "w", encoding ="utf-8") as file:
-        json.dump(data, file, indent=4)
-    print("Data saved susccessfully.")
+    finally:
+        conn.close()
+
 def add_people():
     name  = input("Enter name: ").strip()
 
@@ -67,26 +29,61 @@ def add_people():
         print("Name cannot be empty.")
         return
 
-    if any(person.casefold() == name.casefold()
-            for person in people):
-            print(f"{name} already exists.")
-            return
-    people.append(name)
-    save_data()
-    print("Person added successfully..")
+    conn = get_connection()
 
-#selected_people=[]
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO people (name) VALUES (?)",
+                (name,)
+            )
+
+        print("Person added successfully.")
+
+    except sqlite3.IntegrityError:
+        print(f"{name} already exists.")
+
+    finally:
+        conn.close()
+
+def get_people():
+    conn = get_connection()
+
+    try:
+        cursor = conn.execute(
+            "SELECT id, name FROM people ORDER BY id"
+        )
+        return cursor.fetchall()
+
+    finally:
+        conn.close()
+
+
+def view_people():
+    people = get_people()
+
+    if not people:
+        print("No people added yet.")
+        return
+
+    print("\n--- People ---")
+
+    for person_id, name in people:
+        print(f"{person_id}. {name}")
+
 def split_expense(amount):
+
     if not people:
         print("Add people before splitting an expense.")
         return None
-    global selected_people
-    selected_people = []
-    print("Select people to split expense")
-    for i, person in enumerate(people, start =1):
-        print(f"{i}. {person}")
 
-    choices = input("Choose names for split(by giving there corresponding numbers separated by space): ").split()
+    print("Select people to split expense")
+    for index, (person_id, name) in enumerate(people, start =1):
+        print(f"{index}. {name}")
+
+    choices = input("Enter participant numbers separated by space): ").split()
+
+    selected_people= []
 
     for choice in choices:
         if not choice.isdigit():
@@ -96,10 +93,13 @@ def split_expense(amount):
         if not 0<= index < len(people):
             print(f"Invalid selection: {choice}")
             continue
-        person = people[index]
+        person_id, name = people[index]
 
-        if person not in selected_people:
-            selected_people.append(person)
+        if person_id not in [
+            selected_id for selected_id, _ in selected_people
+        ]:
+            selected_people.append((person_id, name))
+
     if not selected_people:
         print("No valid people selected.")
         return None
@@ -113,66 +113,258 @@ def split_expense(amount):
     print(f"RS.{share} split between {len(selected_people)} people")
     return selected_people, share
 
-def view_balance():
-    if not expenses:
-        print("No expenses recorded yet.")
+def add_expense():
+    people = get_people()
+
+    if not people:
+        print("Add people first.")
         return
 
-    print("\n--- Saved Expenses ---")
+    expense_name = input("Enter expense name: ").strip()
 
-    for expense in expenses:
-        print(f"\nExpense: {expense['expense_name']}")
-        print(f"Amount: Rs. {expense['amount']:.2f}")
-        print(f"Paid by: {expense['paid_by']}")
-        print(f"Participants: {', '.join(expense['selected_people'])}")
-        print(f"Share per person: Rs. {expense['share']:.2f}")
+    if not expense_name:
+        print("Expense name cannot be empty.")
+        return
 
-load_data()
-while True:
-    num = int(input(" 1. Add people \n 2. Split expense \n 3. View balance \n 4. Exit  \n Choose an option "))
-    match num:
-        case 4:
-            break
-        case 1:
-            result = add_people()
-            print(people)
-        case 2:
-            if not people:
-                print("Add people first")
-                continue
+    try:
+        amount = float(input("Enter amount: Rs. "))
 
-            exp_name = input("Enter expense name: ").strip()
-            amount =int(input("Enter amount to be split: Rs. "))
-            paid_by = input("Who paid? ")
-            print(f"Expense name: {exp_name} \nAmount: Rs. {amount} \nPaid by: {paid_by}")
-            payer = next(
-                (p for p in people
-                 if p.casefold() == paid_by.casefold()),
-                None
+        if amount <= 0:
+            print("Amount must be greater than zero.")
+            return
+
+    except ValueError:
+        print("Enter a valid amount.")
+        return
+
+    paid_by_name = input("Who paid? ").strip()
+
+    if not paid_by_name:
+        print("Payer name cannot be empty.")
+        return
+
+    # Find the payer's database ID.
+    conn = get_connection()
+
+    try:
+        payer = conn.execute(
+            "SELECT id, name FROM people WHERE name = ?",
+            (paid_by_name,)
+        ).fetchone()
+
+    finally:
+        conn.close()
+
+    if payer is None:
+        print("Payer must be someone in the people list.")
+        return
+
+    payer_id, payer_name = payer
+
+    print(
+        f"\nExpense: {expense_name}"
+        f"\nAmount: Rs. {amount:.2f}"
+        f"\nPaid by: {payer_name}"
+    )
+
+    result = split_expense(amount)
+
+    if result is None:
+        return
+
+    selected_people, share = result
+
+    conn = get_connection()
+
+    try:
+        with conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO expenses
+                    (expense_name, amount, paid_by)
+                VALUES (?, ?, ?)
+                """,
+                (expense_name, amount, payer_id)
             )
 
-            if payer is None:
-                print("Payer must be someone in the people list.")
-                continue
+            expense_id = cursor.lastrowid
 
-            result = split_expense(amount)
+            participant_rows = [
+                (expense_id, person_id, share)
+                for person_id, _ in selected_people
+            ]
 
-            if result is not None:
-                selected_people, share = result
+            conn.executemany(
+                """
+                INSERT INTO expense_participants
+                    (expense_id, person_id, share)
+                VALUES (?, ?, ?)
+                """,
+                participant_rows
+            )
 
-                expenses.append({
-                    "expense_name": exp_name,
-                    "amount": amount,
-                    "paid_by": payer,
-                    "selected_people": selected_people,
-                    "share": share
-                })
+        print("Expense saved successfully.")
 
-                save_data()
-        case 3:
-            view_balance() 
-        case _:
-            print("Choose an option from 1 to 4")
+    except sqlite3.Error as error:
+        print(f"Could not save expense: {error}")
 
-print("Loop finished!")
-'''
+    finally:
+        conn.close()
+
+def view_balance():
+    people = get_people()
+
+    if not people:
+        print("No people added yet.")
+        return
+
+    print("\n--- Select Person ---")
+
+    for index, (_, name) in enumerate(people, start=1):
+        print(f"{index}. {name}")
+
+    try:
+        choice = int(
+            input("Select person to see their balance: ")
+        )
+
+    except ValueError:
+        print("Enter a valid number.")
+        return
+
+    if not 1 <= choice <= len(people):
+        print("Invalid selection.")
+        return
+
+    user_id, user_name = people[choice - 1]
+
+    conn = get_connection()
+
+    try:
+        transactions = conn.execute(
+            """
+            SELECT
+                e.id,
+                e.expense_name,
+                e.amount,
+                e.paid_by,
+                payer.name,
+                ep.share,
+                (
+                    SELECT COUNT(*)
+                    FROM expense_participants AS ep2
+                    WHERE ep2.expense_id = e.id
+                ) AS participant_count
+            FROM expenses AS e
+            JOIN people AS payer ON payer.id = e.paid_by
+            LEFT JOIN expense_participants AS ep
+                ON ep.expense_id = e.id
+                AND ep.person_id = ?
+            WHERE e.paid_by = ?
+               OR ep.person_id IS NOT NULL
+            ORDER BY e.id
+            """,
+            (user_id, user_id)
+        ).fetchall()
+
+        if not transactions:
+            print(
+                f"{user_name} has not made any transactions yet."
+            )
+            return
+
+        print(f"\n--- Transactions of {user_name} ---")
+
+        for (
+            expense_id,
+            expense_name,
+            amount,
+            payer_id,
+            payer_name,
+            share,
+            participant_count
+        ) in transactions:
+
+            if payer_id == user_id:
+                if share is None:
+                    gets_back = amount
+
+                else:
+                    gets_back = (
+                        share * (participant_count - 1)
+                    )
+
+                if gets_back > 0:
+                    print(
+                        f"{expense_name}: {user_name} "
+                        f"gets back Rs. {gets_back:.2f} "
+                        f"from the other participants."
+                    )
+
+                else:
+                    print(
+                        f"{expense_name}: {user_name} "
+                        "owes nothing to themselves."
+                    )
+
+            elif share is not None:
+                print(
+                    f"{expense_name}: {user_name} owes "
+                    f"Rs. {share:.2f} to {payer_name}."
+                )
+
+    finally:
+        conn.close()
+
+def main():
+    initialize_database()
+
+    while True:
+        print(
+            f"\n{'=' * 20}"
+            "\n     MAIN MENU"
+            f"\n{'=' * 20}"
+        )
+
+        print(
+            "1. Add people\n"
+            "2. Split expense\n"
+            "3. View balance\n"
+            "4. View people\n"
+            "5. Exit"
+        )
+
+        try:
+            num = int(input("Choose an option: "))
+
+        except ValueError:
+            print("Please enter a number from 1 to 6.")
+            continue
+
+        match num:
+            case 1:
+                print("\n--- Add People ---")
+                add_people()
+
+            case 2:
+                print("\n--- Split Expenses ---")
+                add_expense()
+
+            case 3:
+                print("\n--- View Balance ---")
+                view_balance()
+
+            case 4:
+                view_people()
+
+            case 5:
+                break
+
+            case _:
+                print("Choose an option from 1 to 6.")
+
+    print("Loop finished!")
+
+
+if __name__ == "__main__":
+    main()
